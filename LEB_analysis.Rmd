@@ -1,0 +1,255 @@
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(fig.align ='center', echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+
+```{r packages}
+# Install all required packages (if missing) and load to library # 
+
+requiredPackages = c('WDI','ggplot2', 'dplyr', 'knitr', 'kableExtra') 
+for(p in requiredPackages){
+  if(!require(p, character.only = TRUE)) install.packages(p, dependencies=TRUE, repos = 'http://cran.r-project.org')
+  library(p,character.only = TRUE)
+}
+
+```
+
+```{r pulldata}
+
+# pull data from WDI (Life Exp and GDP per capita indicators) # 
+
+data <- WDI(country = "all",indicator = c("NY.GDP.PCAP.PP.KD","SP.DYN.LE00.IN"), start=1960, end=2016, extra=FALSE, cache=NULL)
+```
+
+
+```{r wrangling1}
+# Drop non-countries from dataset # 
+
+data <- data %>% 
+  filter(!country %in% c("Arab World", "Central Europe and the Baltics", 
+                         "Early-demographic dividend", "East Asia & Pacific",
+                         "East Asia & Pacific (excluding high income)",
+                         "East Asia & Pacific (IDA & IBRD countries)",
+                         "Eswatini", "Euro area", "Europe & Central Asia",
+                         "Europe & Central Asia (excluding high income)",
+                         "Europe & Central Asia (IDA & IBRD countries)",
+                         "European Union", 
+                         "Fragile and conflict affected situations",
+                         "Heavily indebted poor countries (HIPC)",
+                         "High income","IBRD only","IDA & IBRD total", 
+                         "IDA blend","IDA only", "IDA total", 
+                         "Late-demographic dividend", 
+                         "Latin America & Caribbean",
+                         "Latin America & Caribbean (excluding high income)",
+                         "Latin America & the Caribbean (IDA & IBRD countries)",
+                         "Least developed countries: UN classification",
+                         "Low & middle income", "Low income", 
+                         "Lower middle income", "Middle East & North Africa", 
+                         "Middle East & North Africa (excluding high income)",
+                         "Middle East & North Africa (IDA & IBRD countries)",
+                         "Middle income", "North America", "Not classified",
+                         "OECD members", "Other small states", 
+                         "Pacific island small states", 
+                         "Post-demographic dividend",
+                         "Pre-demographic dividend", "Small states", 
+                         "South Asia", "South Asia (IDA & IBRD)",
+                         "Sub-Saharan Africa", 
+                         "Sub-Saharan Africa (excluding high income)",
+                         "Sub-Saharan Africa (IDA & IBRD countries)", 
+                         "Upper middle income", "World"
+                         ))
+
+```
+
+
+#### Life Expectancy at Birth Analysis
+
+##### Oscar M. Onam, Economist/Data Scientist candidate
+##### November 20, 2019
+***
+
+<font size="2"> This analysis uses data from the World Development Indicators (WDI) to investigate how Life Expectancy at Birth (LEB) changed over time, from 1960 to 2016, in countries of different wealth. Quartiles for GDP per capita data for 2016 were created and used to classify countries into 4 categories: high income, upper middle income, lower middle income and lower income.</font> 
+
+```{r wrangling2}
+# Create GDP per capita quartiles for 2016 # 
+
+lookup_data <- data %>%
+  filter(year==2016) %>%
+  mutate(gdp_quartile = ntile(NY.GDP.PCAP.PP.KD, 4)) %>% 
+  mutate(
+    gdp_quartile_names = 
+      ifelse(gdp_quartile == 1,"Low",
+             ifelse(gdp_quartile == 2,"Lower middle",
+                    ifelse(gdp_quartile == 3,"Upper middle",
+                         "High")))) %>%
+  select(country, gdp_quartile_names) %>% unique()
+
+
+# Match Life Exp data with GDP per capita quartiles # 
+
+data_merged <- plyr::join(data, lookup_data, by="country") %>%  # use plyr in-line to avoid any possible conflict with dplyr 
+  rename(life_exp = SP.DYN.LE00.IN, gdp_pc = NY.GDP.PCAP.PP.KD) %>% filter(year %% 2 == 0) # subset data for even years only.
+
+# Order levels of quartiles for easy plotting #
+
+data_merged$gdp_quartile_names<-factor(
+  data_merged$gdp_quartile_names,
+         levels = c("High",
+                    "Upper middle",
+                    "Lower middle",  
+                    "Low",
+                    "NA"))
+```
+
+
+```{r graphing}
+# Plot boxplots faceted in a grid # 
+
+ ggplot(data=subset(data_merged, !is.na(gdp_quartile_names)), # omit NAs from dataset.
+  aes(x = as.factor(year), y = life_exp)) +
+ # theme_dark() +
+  geom_boxplot(fill = 'lightsteelblue') +
+  coord_cartesian(ylim = c(30, 85)) +
+  ggtitle("Life expectancy trend, 1960 - 2016") +
+  xlab("Year") + ylab("Life Expectancy at Birth") +
+  scale_x_discrete(breaks = seq(1960, 2016, by = 4)) + 
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 10),
+    axis.text.y = element_text(size = 8),
+    axis.text.x = element_text(size = 8, angle = 90, hjust = 1),
+    axis.title = element_text(size = 8)
+        ) +
+  facet_grid(rows = vars(gdp_quartile_names))
+```
+
+<font size="2"> 
+
+The graph shows increasing life expectancy across all countries between the year 1960 and 2016, likely due to health improvements (i.e. immunization). However, the improvement indicated by the upward movement of LEB median was different across GDP/Capita groups. Data shows that in 1960 half of the people in rich countries (high GDP/capita) were expected not to live past their 69th birthday, while in poor countries (low GDP/capita) half of the people were expected not to live past their 41st birthday. About six decades later, the figure in rich countries increased by 18% to 69th birthday, while it increased to 63rd birthday in poor countries, which was a drastic improvement of about 53% (see table below). Similarly lower-middle countries recorded a significant 43%  gain. The table shows that the gap between rich and poor countries narrowed over time, but some of the poor countries still had very low LEB. There was large disparity in LEB among poor countries as indicated by slightly wider inter-quartile range (IQR) in 2016. However, while the distribution of LEB in richer countries was more compact indicated by slightly lower IQR, poorer countries recoded higher decrease in disparity among themselves during the period.
+
+</font> 
+
+```{r Table}
+
+# Create vectors for table #
+
+    high_med_1960 <- data_merged %>%
+    filter(year==1960, gdp_quartile_names=="High")
+
+    high_med_2016 <- data_merged %>%
+    filter(year==2016, gdp_quartile_names=="High")
+    
+    um_med_1960 <- data_merged %>%
+    filter(year==1960, gdp_quartile_names=="Upper middle")
+
+    um_med_2016 <- data_merged %>%
+    filter(year==2016, gdp_quartile_names=="Upper middle")
+    
+    lm_med_1960 <- data_merged %>%
+    filter(year==1960, gdp_quartile_names=="Lower middle")
+
+    lm_med_2016 <- data_merged %>%
+    filter(year==2016, gdp_quartile_names=="Lower middle")
+    
+    low_med_1960 <- data_merged %>%
+    filter(year==1960, gdp_quartile_names=="Low")
+
+    low_med_2016 <- data_merged %>%
+    filter(year==2016, gdp_quartile_names=="Low")
+    
+    #************************#
+    
+    high_iqr_1960 <- data_merged %>%
+    filter(year==1960, gdp_quartile_names=="High")
+
+    high_iqr_2016 <- data_merged %>%
+    filter(year==2016, gdp_quartile_names=="High")
+    
+    um_iqr_1960 <- data_merged %>%
+    filter(year==1960, gdp_quartile_names=="Upper middle")
+
+    um_iqr_2016 <- data_merged %>%
+    filter(year==2016, gdp_quartile_names=="Upper middle")
+    
+    lm_iqr_1960 <- data_merged %>%
+    filter(year==1960, gdp_quartile_names=="Lower middle")
+
+    lm_iqr_2016 <- data_merged %>%
+    filter(year==2016, gdp_quartile_names=="Lower middle")
+    
+    low_iqr_1960 <- data_merged %>%
+    filter(year==1960, gdp_quartile_names=="Low")
+
+    low_iqr_2016 <- data_merged %>%
+    filter(year==2016, gdp_quartile_names=="Low")
+
+
+
+    Year <- c("1960", "2016", "Change (%)")
+
+    Median <- c(
+      format(round(high_1960m <-median(high_med_1960$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(high_2016m <-median(high_med_2016$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(((high_2016m-high_1960m)/high_1960m)*100,1), nsmall = 1) 
+      )
+ 
+    IQR <- c(
+      format(round(high_1960i <-IQR(high_iqr_1960$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(high_2016i <-IQR(high_iqr_2016$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(((high_2016i-high_1960i)/high_1960i)*100,1), nsmall = 1) 
+      )
+    
+    Median. <- c(
+      format(round(um_1960m <-median(um_med_1960$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(um_2016m <-median(um_med_2016$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(((um_2016m-um_1960m)/um_1960m)*100,1), nsmall = 1) 
+      )
+ 
+    IQR. <- c(
+      format(round(um_1960i <-IQR(um_iqr_1960$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(um_2016i <-IQR(um_iqr_2016$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(((um_2016i-um_1960i)/um_1960i)*100,1), nsmall = 1) 
+      )
+    
+    .Median <- c(
+      format(round(lm_1960m <-median(lm_med_1960$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(lm_2016m <-median(lm_med_2016$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(((lm_2016m-lm_1960m)/lm_1960m)*100,1), nsmall = 1) 
+      )
+ 
+    .IQR <- c(
+      format(round(lm_1960i <-IQR(lm_iqr_1960$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(lm_2016i <-IQR(lm_iqr_2016$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(((lm_2016i-lm_1960i)/lm_1960i)*100,1), nsmall = 1) 
+      )
+    
+    .Median. <- c(
+      format(round(low_1960m <-median(low_med_1960$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(low_2016m <-median(low_med_2016$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(((low_2016m-low_1960m)/low_1960m)*100,1), nsmall = 1) 
+      )
+ 
+    .IQR. <- c(
+      format(round(low_1960i <-IQR(low_iqr_1960$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(low_2016i <-IQR(low_iqr_2016$life_exp, na.rm = TRUE),0), nsmall = 0),
+      format(round(((low_2016i-low_1960i)/low_1960i)*100,1), nsmall = 1) 
+      )
+
+# Create and print table #
+      
+table_LEgdp <- data.frame(Year, Median, IQR, Median.,IQR., .Median, .IQR,.Median., .IQR.)
+
+# table_LEgdp %>% 
+#   regulartable() %>% 
+#   autofit() 
+
+kable(table_LEgdp, caption = "Change in median and IQR by countries wealth, 1960 - 2016") %>%
+ kable_styling(bootstrap_options = "striped",  position = "center", font_size = 10, full_width = FALSE) %>%
+  add_header_above(c(" " = 1, "High" = 2, "Upper middle" = 2, "Lower middle" = 2, "Low" = 2))
+
+```
+
+
+
+
+
